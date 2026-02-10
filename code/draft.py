@@ -8,6 +8,9 @@ def initialize_system(n0: int, t: int, rng, p, new_links):
     G.add_nodes_from(range(n0))
     for i in range(t):
         r = rng.uniform(0, 1)
+
+        # This block selects n = newlinks random nodes and adds
+        # an edge between them.
         for j in range(new_links):
             if r >= p:
                 n_elem = nx.number_connected_components(G)
@@ -21,6 +24,8 @@ def initialize_system(n0: int, t: int, rng, p, new_links):
 
 def main(n0, t, rng, p, new_links):
     G = initialize_system(n0, t, rng, p, new_links)
+
+    # Histogram of node degrees in graph G
     print(len(G.edges()))
     degrees = [G.degree(n) for n in G.nodes()]
     plt.hist(degrees, bins=range(max(degrees) + 2))
@@ -29,6 +34,7 @@ def main(n0, t, rng, p, new_links):
 
 
 if __name__ == "__main__":
+    # Initialization parameters
     semilla = 51001430439489238069396834186967689176
     rng = np.random.default_rng(semilla)
     n0 = 1000
