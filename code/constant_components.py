@@ -5,15 +5,16 @@ import numpy as np
 
 def initialize(N):
     gset = {}
+    gsizes = np.ones(N)
+    gassembly = np.zeros(N)
     for i in range(N):
         gset[i] = ig.Graph(1)
-    return gset
+    return gset, gsizes
 
 
-def recombine(gset, times, times_2):
+def recombine(gset, gsizes, times, times_2, rng):
     # Preallocate the random numbers to avoid multiple calls
-    rands = np.random.randint(N, size=[times, times_2, 2])
-    max_nodes = [0, 2]
+    rands = rng.integers(N, size=[times, times_2, 2])
     for i in range(times):
         for j in range(times_2):
             rand1 = rands[i, j, 0]
@@ -25,31 +26,42 @@ def recombine(gset, times, times_2):
             # If both elements have only one vertex
             # the second one gets a new node.
             if size1 == size2 == 1:
-                obj2.add_vertex()
-                obj2.add_edge(0, 1)
+                obj1.add_vertex()
+                obj1.add_edge(0, 1)
+                gsizes[rand1] = 2
             else:
-                # Create a graph with two connected components
-                obj3 = obj1.disjoint_union(obj2)
+                # Select a random node on each component
+                # TODO: limit the maximum node degree
+                node1 = rng.integers(size1)
+                node2 = node1
+                while node1 == node2:  # avoids self-loops
+                    node2 = rng.integers(size1 + size2)  # allowing cycles to form
 
-                # Select a random node on each component (of degree < D)
-                # and link them
-                node1 = np.random.randint(size1)
-                node2 = size1 + np.random.randint(size2)  # due to indexing
-                obj3.add_edge(node1, node2)
-                nodes = obj3.vcount()
-                if nodes > max_nodes[1]:
-                    max_nodes = [rand2, obj3.vcount()]
+                # In case there isn't a cycle
+                if node2 >= size1:
+                    # Create a graph with two connected components
+                    obj3 = obj1.disjoint_union(obj2)
+                    # Link the two disjoint networks node1-node2
+                    obj3.add_edge(node1, node2)
+                    nodes = obj3.vcount()
 
-                gset[rand2] = obj3
-                print(max_nodes)
-    return gset, max_nodes
+                    # Replace the first element with the new graph
+                    gset[rand1] = obj3
+                    gsizes[rand1] += gsizes[rand2]
+                else:
+                    if (node1, node2) in obj1.es():
+                        continue
+                    else:
+                        obj1.add_edge(node1, node2)
+                        gset[rand1] = obj1
+    return gset, gsizes
 
 
 def find_largest(gset):
     # Make an array with the nodes of every graph in the gset
     node_count = np.array([gset[graph].vcount() for graph in gset])
     idx = np.max(node_count)
-    print(node_count)
+    # print(node_count)
     return idx
 
 
@@ -70,14 +82,19 @@ def represent(g):
 
 
 def main(N, rng):
-    gset = initialize(N)
-    gset, max_nodes = recombine(gset, 10, 10)
-    represent(gset[max_nodes[0]])
-    node_count = [gset[graph].vcount() for graph in gset]
+    gset, gsizes = initialize(N)
+    gset, gsizes = recombine(gset, gsizes, 100, 15, rng)
+    max_index = np.argmax(gsizes)
+    max_size = gsizes[max_index]
+    print("Largest element index: ", max_index)
+    print("Element size: ", max_size)
+    represent(gset[max_index])
+
+    # represent(gset[max_nodes[0]])
 
 
 if __name__ == "__main__":
     semilla = 51001430439489238069396834186967689176
     rng = np.random.default_rng(semilla)
-    N = 100
+    N = 400
     main(N, rng)
