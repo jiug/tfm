@@ -101,23 +101,6 @@ def recombine(
     return gset, gsizes, gassembly
 
 
-def find_largest(gset: List) -> int:
-    """
-    Find the size of the largest graph in the set.
-
-    Args:
-        gset: List of graphs to search through
-
-    Returns:
-        The number of nodes in the largest graph
-    """
-    # Make an array with the nodes of every graph in the gset
-    node_count = np.array([gset[i].vcount() for i in range(len(gset))])
-    idx = np.max(node_count)
-    # print(node_count)
-    return idx
-
-
 def represent(g: ig.Graph) -> None:
     """
     Visualize a graph with colored components.
@@ -141,6 +124,26 @@ def represent(g: ig.Graph) -> None:
         edge_width=0.7,
     )
     plt.show()
+
+
+def join_graphs(gset: List):
+    """
+    Combine multiple graphs into a single compound graph using disjoint unions.
+
+    Args:
+        gset: List of igraph Graph objects to be joined
+
+    Returns:
+        A single igraph Graph object containing all the input graphs as disjoint components
+
+    Note:
+        The function creates a new compound graph by sequentially performing disjoint
+        union operations on all graphs in the input list.
+    """
+    compound = ig.Graph()
+    for g in gset:
+        compound = compound.disjoint_union(g)
+    return compound
 
 
 def main(
@@ -168,16 +171,17 @@ def main(
     max_index = np.argmax(gsizes)
     max_size = gsizes[max_index]
     max_assembly = gassembly[max_index]
-    print("Element size: ", max_size)
+    print("Biggest element size: ", max_size)
     print("Assembly index upper bound: ", max_assembly)
-    represent(gset[max_index])
+    compound = join_graphs(gset)
+    represent(compound)
 
 
 if __name__ == "__main__":
     semilla = 51001430439489238069396834186967689176
     rng = np.random.default_rng(semilla)
-    N = 6000
+    N = 100
     max_degree = 6
-    time_steps = 800
+    time_steps = 10
     bonds_per_step = 15
     main(N, max_degree, time_steps, bonds_per_step, rng)
