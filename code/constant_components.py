@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Tuple, List
 from tqdm import tqdm
+import argparse
+import secrets
 
 
 def initialize(N: int) -> Tuple[List, np.ndarray, np.ndarray]:
@@ -152,6 +154,7 @@ def main(
     time_steps: int,
     bonds_per_step: int,
     rng: np.random.Generator,
+    graph: bool = False,
 ) -> None:
     """
     Main function to run the graph recombination simulation.
@@ -173,15 +176,50 @@ def main(
     max_assembly = gassembly[max_index]
     print("Biggest element size: ", max_size)
     print("Assembly index upper bound: ", max_assembly)
-    compound = join_graphs(gset)
-    represent(compound)
+
+    if graph:
+        compound = join_graphs(gset)
+        represent(compound)
 
 
 if __name__ == "__main__":
-    semilla = 51001430439489238069396834186967689176
+    parser = argparse.ArgumentParser(
+        prog="constant_components",
+        usage="%(prog)s set_size max_degree iterations bonds_per_iteration [options]",
+        description="Script that generates a collection of graphs from a simple combination rule",
+        epilog="Example:  python3 constant_components.py 100 6 10 15 -g True",
+    )
+    parser.add_argument("set_size", type=int, help="Size of the set")
+    parser.add_argument(
+        "max_degree", type=int, help="Max number of edges for each node"
+    )
+    parser.add_argument(
+        "iterations", type=int, help="Iterations where 'b' new bonds are created"
+    )
+    parser.add_argument(
+        "bonds_per_iteration",
+        type=int,
+        help="Number of new bonds created per iteration",
+    )
+    parser.add_argument(
+        "-g",
+        "--graph",
+        type=bool,
+        help="Toggle for showing a representation of the set. Recommended only for smaller (n<1000) sets",
+    )
+    parser.add_argument("-s", "--seed", type=bool, help="Use a hardcoded seed")
+    args = parser.parse_args()
+
+    if args.seed:
+        semilla = 51001430439489238069396834186967689176
+    else:
+        semilla = secrets.randbits(128)
     rng = np.random.default_rng(semilla)
-    N = 100
-    max_degree = 6
-    time_steps = 10
-    bonds_per_step = 15
-    main(N, max_degree, time_steps, bonds_per_step, rng)
+    main(
+        args.set_size,
+        args.max_degree,
+        args.iterations,
+        args.bonds_per_iteration,
+        rng,
+        args.graph,
+    )
