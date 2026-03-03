@@ -39,3 +39,5 @@ The script prints the size of the biggest element in the set and an upper bound 
 - `-s --seed: bool` If true uses a hardcoded seed
 
 ### Default output
+
+<img src="https://github.com/jiug/tfm/blob/master/figs/dyck_paths.png" alt="Output of the script" width="500" height=auto>
