@@ -1,5 +1,6 @@
 import argparse
 import numpy as np
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import re
 
@@ -29,7 +30,7 @@ def grow(tree:str, p:float,d:int, k:int)->tuple[str, int]:
         for match in matches:
             start, _ = match.span()
             rand = np.random.random()
-            if rand >= p:
+            if rand <= p:
                 result = tree[:start+1+shift] + replacement_split+ tree[start+1+shift:]
                 # The shift depends on the number of new leaves
                 shift += 2*k 
@@ -56,15 +57,31 @@ def check_word(word:str)->None:
     else:
         print("It's a Dyck Word")
 
+def digitize(word:str)->tuple[str,np.ndarray]:
+    #Replace '(' for 1 and ')' for -1
+    replaced = word.replace('(', '2').replace(')','0').replace('X','')
+    integers = np.array([int(x)-1 for x in list(replaced)])
+    return replaced, integers 
+
+def mountains(digits:np.ndarray)->np.ndarray:
+    profile = np.zeros(len(digits)+1)
+    for i in range(len(digits)):
+        profile[i+1] = sum(digits[:i+1])
+    return profile
+
+def coarse_grain(word:str,window:int)->np.ndarray:
+    return     
+
 
 def main(n:int,prob:float, max_depth:int, new_leaves: int, g:bool = False)-> None:    
         
-    forest, lengths, depths = init_forest(n)
-    for i in range(len(forest)):
-        tree, depth = grow(forest[i], prob, max_depth , new_leaves)
+    roots, lengths, depths = init_forest(n)
+    forest = []
+    for i in tqdm(range(len(roots)), desc='Growing forest'):
+        tree, depth = grow(roots[i], prob, max_depth , new_leaves)
         lengths[i] = len(tree)
         depths[i] = depth +1
-    # print(tree[:-1].count('('), tree[:-1].count(')'), tree.count('X'))
+        forest.append(tree)
     if g:
         plt.hist(depths)
         plt.yscale('log')
@@ -72,6 +89,19 @@ def main(n:int,prob:float, max_depth:int, new_leaves: int, g:bool = False)-> Non
         plt.title(rf'Dyck word depths ($n$={n}, $p$={prob}, $d$={max_depth}, $k$={new_leaves})')
         # plt.xlim([0.5, max(lengths)+0.5])
         plt.show()
+
+    max_length = np.argmax(lengths)
+    max_depth = np.argmax(depths)
+    _, digits_depth = digitize(forest[max_depth])
+    _, digits_length= digitize(forest[max_length])
+    mountain_length = mountains(digits_length)
+    mountain_depth = mountains(digits_depth)
+
+    plt.plot(mountain_depth,label=f'Deepest l={lengths[max_depth]}, d={max(depths)}')
+    plt.plot(mountain_length,label=f'Longest l={max(lengths)}, d={depths[max_length]}')
+    plt.title(f'Dyck paths')
+    plt.legend()
+    plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
