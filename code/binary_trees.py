@@ -69,8 +69,20 @@ def mountains(digits:np.ndarray)->np.ndarray:
         profile[i+1] = sum(digits[:i+1])
     return profile
 
-def coarse_grain(word:str,window:int)->np.ndarray:
-    return     
+# Coarse graining function that obtains each i-th entry from the average of
+# the [w*i,...,w*(i+1)] entries of the digitized Dyck array. 
+def coarse_grain(word,window:int)->np.ndarray:
+    if type(word) == str:
+        _, digits = digitize(word)
+    else:
+        digits = word
+    length = len(digits)
+    blocks = length//window
+    last_block = length%window
+    coarse_grained = np.zeros(blocks + 1) if last_block > 0 else np.zeros(blocks) 
+    for i in range(blocks-1):
+        coarse_grained[i] = np.mean(digits[i*window:(i+1)*window])
+    return  coarse_grained 
 
 
 def main(n:int,prob:float, max_depth:int, new_leaves: int, g:bool = False)-> None:    
@@ -102,6 +114,9 @@ def main(n:int,prob:float, max_depth:int, new_leaves: int, g:bool = False)-> Non
     plt.title(f'Dyck paths')
     plt.legend()
     plt.show()
+
+    print(coarse_grain(digits_length,5))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
