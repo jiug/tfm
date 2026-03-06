@@ -219,7 +219,7 @@ def main(
     plt.xlabel('Component Diameter')
     plt.ylabel('Cyclomatic Complexity')
     plt.title('Cyclomatic Complexity vs Diameter per component')
-    plt.colorbar(scatter.collections[0], label='Graph size (log)')
+    plt.colorbar(scatter.collections[0], label='Size (log)')
     plt.show()
 
     if graph == True:
