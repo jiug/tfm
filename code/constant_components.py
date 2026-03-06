@@ -1,9 +1,11 @@
 import igraph as ig
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from typing import Tuple, List
 from tqdm import tqdm
 import argparse
+import seaborn as sns
 import secrets
 
 
@@ -56,7 +58,7 @@ def recombine(
     # Preallocate the random numbers to avoid multiple calls
     N = len(gset)
     rands = rng.integers(N, size=[times, 2])
-    for i in tqdm(range(times), desc="Outer loop"):
+    for i in tqdm(range(times), desc="Combining Graphs"):
         rand1 = rands[i,0]
         rand2 = rands[i,1]
         obj1 = gset[rand1]
@@ -144,6 +146,41 @@ def join_graphs(gset: List):
         compound = compound.disjoint_union(g)
     return compound
 
+def metrics(gset:List, gsizes:np.ndarray, gassembly:np.ndarray) -> pd.DataFrame : 
+    """
+    Combine measurements of the collection of graphs and into a pd.DataFrame
+    Args:
+        gset:       List of igraph Graph objects to be joined
+        gsize:      List of sizes corresponding to the elements in gset
+        gassembly   List of upper limits for the assembly index corresponding
+                    to the elements in gset
+    Returns:
+        metrics:    DataFrame with the following metrics for each element
+                        -sizes:             number of nodes  
+                        -cyclomatic_cpxt:   cyclomatic complexity = Edges - Nodes + 2 
+                        -min_cycle_length:  Length of the minimum cycle (0 if None)
+                        -diameter:          Maximum of the list of shortests paths
+                        -max_asselbly:      Index that correlates  with the steps needed
+                                            to arrive to the given component by recombination
+
+    Note:
+        The function returns a pd.DataFrame with all the metrics.
+    """
+    set_size = len(gset) 
+    cyclomatic_cpxt = np.zeros(set_size)
+    min_cycle_length = np.zeros(set_size)
+    diameter = np.zeros(set_size)
+    for i in tqdm(range(set_size),desc='Analyzing result'):
+        component = gset[i]
+        cyclomatic_cpxt[i] = component.ecount() - component.vcount() + 2 #only 1 connected component by definition
+        min_deg = min(component.degree()) #Preposition 2.11.1 Graph Theory notes
+        if min_deg > 1:
+            min_cycle_length[i] = min_deg + 1
+        diameter[i] = component.diameter()
+
+    metrics = pd.DataFrame({'sizes':gsizes, 'cyclomatic_cpxt': cyclomatic_cpxt, 'min_cycle_length': min_cycle_length, 'diameter': diameter, 'max_assembly': gassembly})
+    return metrics
+
 
 def main(
     N: int,
@@ -172,6 +209,18 @@ def main(
     max_assembly = gassembly[max_index]
     print("Biggest element size: ", max_size)
     print("Assembly index upper bound: ", max_assembly)
+
+    data = metrics(gset, gsizes, gassembly)
+   
+    sns.histplot(data.sizes)
+    plt.show()
+
+    scatter = sns.scatterplot(data, x= 'diameter',y='cyclomatic_cpxt',c=data.max_assembly)
+    plt.xlabel('Component Diameter')
+    plt.ylabel('Cyclomatic Complexity')
+    plt.title('Cyclomatic Complexity vs Diameter per component')
+    plt.colorbar(scatter.collections[0], label='Graph size (log)')
+    plt.show()
 
     if graph == True:
         compound = join_graphs(gset)
