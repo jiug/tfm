@@ -1,12 +1,14 @@
+import argparse
+import secrets
+from typing import List, Tuple
+
 import igraph as ig
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from typing import Tuple, List
-from tqdm import tqdm
-import argparse
 import seaborn as sns
-import secrets
+from scipy.optimize import curve_fit
+from tqdm import tqdm
 
 
 def initialize(N: int) -> Tuple[List, np.ndarray, np.ndarray]:
@@ -59,8 +61,8 @@ def recombine(
     N = len(gset)
     rands = rng.integers(N, size=[times, 2])
     for i in tqdm(range(times), desc="Combining Graphs"):
-        rand1 = rands[i,0]
-        rand2 = rands[i,1]
+        rand1 = rands[i, 0]
+        rand2 = rands[i, 1]
         obj1 = gset[rand1]
         obj2 = gset[rand2]
         size1 = obj1.vcount()
@@ -93,8 +95,8 @@ def recombine(
                     gassembly[rand1] = max(gassembly[rand1], gassembly[rand2]) + 1
                 # If the nodes are from the same object -> cycle
                 else:
-                    edges = [ (edge.source, edge.target) for edge in obj1.es()]
-                    if((node1, node2) in edges) or ((node2,node1) in edges) :
+                    edges = [(edge.source, edge.target) for edge in obj1.es()]
+                    if ((node1, node2) in edges) or ((node2, node1) in edges):
                         continue
                     else:
                         obj1.add_edge(node1, node2)
@@ -146,7 +148,8 @@ def join_graphs(gset: List):
         compound = compound.disjoint_union(g)
     return compound
 
-def metrics(gset:List, gsizes:np.ndarray, gassembly:np.ndarray) -> pd.DataFrame : 
+
+def metrics(gset: List, gsizes: np.ndarray, gassembly: np.ndarray) -> pd.DataFrame:
     """
     Combine measurements of the collection of graphs and into a pd.DataFrame
     Args:
@@ -156,8 +159,8 @@ def metrics(gset:List, gsizes:np.ndarray, gassembly:np.ndarray) -> pd.DataFrame 
                     to the elements in gset
     Returns:
         metrics:    DataFrame with the following metrics for each element
-                        -sizes:             number of nodes  
-                        -cyclomatic_cpxt:   cyclomatic complexity = Edges - Nodes + 2 
+                        -sizes:             number of nodes
+                        -cyclomatic_cpxt:   cyclomatic complexity = Edges - Nodes + 2
                         -min_cycle_length:  Length of the minimum cycle (0 if None)
                         -diameter:          Maximum of the list of shortests paths
                         -max_asselbly:      Index that correlates  with the steps needed
@@ -166,19 +169,29 @@ def metrics(gset:List, gsizes:np.ndarray, gassembly:np.ndarray) -> pd.DataFrame 
     Note:
         The function returns a pd.DataFrame with all the metrics.
     """
-    set_size = len(gset) 
+    set_size = len(gset)
     cyclomatic_cpxt = np.zeros(set_size)
     min_cycle_length = np.zeros(set_size)
     diameter = np.zeros(set_size)
-    for i in tqdm(range(set_size),desc='Analyzing result'):
+    for i in tqdm(range(set_size), desc="Analyzing result"):
         component = gset[i]
-        cyclomatic_cpxt[i] = component.ecount() - component.vcount() + 2 #only 1 connected component by definition
-        min_deg = min(component.degree()) #Preposition 2.11.1 Graph Theory notes
+        cyclomatic_cpxt[i] = (
+            component.ecount() - component.vcount() + 2
+        )  # only 1 connected component by definition
+        min_deg = min(component.degree())  # Preposition 2.11.1 Graph Theory notes
         if min_deg > 1:
             min_cycle_length[i] = min_deg + 1
         diameter[i] = component.diameter()
 
-    metrics = pd.DataFrame({'sizes':gsizes, 'cyclomatic_cpxt': cyclomatic_cpxt, 'min_cycle_length': min_cycle_length, 'diameter': diameter, 'max_assembly': gassembly})
+    metrics = pd.DataFrame(
+        {
+            "sizes": gsizes,
+            "cyclomatic_cpxt": cyclomatic_cpxt,
+            "min_cycle_length": min_cycle_length,
+            "diameter": diameter,
+            "max_assembly": gassembly,
+        }
+    )
     return metrics
 
 
@@ -188,7 +201,7 @@ def main(
     time_steps: int,
     rng: np.random.Generator,
     graph: bool = False,
-)-> tuple[list, np.ndarray, np.ndarray]:
+) -> tuple[list, np.ndarray, np.ndarray]:
     """
     Main function to run the graph recombination simulation.
 
@@ -211,15 +224,38 @@ def main(
     print("Assembly index upper bound: ", max_assembly)
 
     data = metrics(gset, gsizes, gassembly)
-   
+
     sns.histplot(data.sizes)
     plt.show()
 
-    scatter = sns.scatterplot(data, x= 'diameter',y='cyclomatic_cpxt',c=data.max_assembly)
-    plt.xlabel('Component Diameter')
-    plt.ylabel('Cyclomatic Complexity')
-    plt.title('Cyclomatic Complexity vs Diameter per component')
-    plt.colorbar(scatter.collections[0], label='Size (log)')
+    sorted_index = np.argsort(data.diameter)
+    x = data.diameter[sorted_index]
+    y = data.cyclomatic_cpxt[sorted_index]
+
+    def equation(x, a, b, c, d, e):
+        return a * x**4 + b * x**3 + c * x**2 + d * x + e
+
+    popt, pcov = curve_fit(equation, x, y)
+    a, b, c, d, e = popt
+    ypred = equation(x, *popt)
+    perr = np.sqrt(np.diag(pcov))
+    ci = 1.96 * perr
+
+    scatter = sns.scatterplot(
+        data,
+        x="diameter",
+        y="cyclomatic_cpxt",
+        c=data.max_assembly,
+        label="Generated data",
+    )
+    plt.plot(x, ypred, label="Fit")
+    # plt.fill_between(x, ypred - ci[0], ypred + ci[0], color='red', alpha=0.2, label='95% Confidence Interval')
+    plt.xlabel("Component Diameter")
+    plt.ylabel("Cyclomatic Complexity")
+    plt.title("Cyclomatic Complexity vs Diameter per component")
+    plt.colorbar(scatter.collections[0], label="Max assembly")
+    plt.legend()
+    plt.grid(True)
     plt.show()
 
     if graph == True:
@@ -227,6 +263,7 @@ def main(
         represent(compound)
 
     return gset, gsizes, gassembly
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
