@@ -11,188 +11,300 @@ from scipy.optimize import curve_fit
 from tqdm import tqdm
 
 
-def initialize(N: int) -> Tuple[List, np.ndarray, np.ndarray]:
+class GraphCollection:
     """
-    Initialize a set of N isolated graphs, each with a single node.
+    A collection of graphs that can grow through recombination operations.
 
-    Args:
-        N: Number of graphs to initialize.
+    This class encapsulates a set of graphs and provides methods for growing
+    them through random recombination, analyzing their properties, and visualizing
+    the results.
 
-    Returns:
-        A tuple containing:
-        - gset: List of igraph Graph objects
-        - gsizes: Array tracking the size (number of nodes) of each graph
-        - gassembly: Array tracking the assembly index of each graph
+    Attributes:
+        gset (List[ig.Graph]): List of graph objects in the collection
+        gsizes (np.ndarray): Array tracking the size of each graph
+        gassembly (np.ndarray): Array tracking the assembly index of each graph
+        rng (np.random.Generator): Random number generator for reproducibility
     """
-    gset = [None] * N
-    gsizes = np.ones(N)
-    gassembly = np.zeros(N)
-    for i in range(N):
-        gset[i] = ig.Graph(1)
-    return gset, gsizes, gassembly
 
+    def __init__(self, N: int, seed=None) -> None:
+        """
+        Initialize a GraphCollection with N isolated graphs.
 
-def recombine(
-    gset: List,
-    gsizes: np.ndarray,
-    gassembly: np.ndarray,
-    max_degree: int,
-    times: int,
-    rng: np.random.Generator,
-) -> Tuple[List, np.ndarray, np.ndarray]:
-    """
-    Recombine graphs by randomly connecting nodes from different graphs or creating cycles.
+        Args:
+            N (int): Number of initial graphs to create
+            seed (int, optional): Random seed for reproducibility.
+                                If None, uses default RNG.
 
-    Args:
-        gset: List of graphs to recombine
-        gsizes: Array tracking the size of each graph
-        gassembly: Array tracking the assembly index of each graph
-        max_degree: Maximum allowed degree for nodes
-        times: Generation steps
-        rng: Random number generator
+        Returns:
+            None
+        """
+        self.gset, self.gsizes, self.gassembly = self._initialize(N, rng)
+        self.rng = np.random.default_rng(seed) if seed else np.random.default_rng(42)
 
-    Returns:
-        A tuple containing the updated gset, gsizes, and gassembly arrays
+    def _initialize(
+        self, N: int, rng: np.random.Generator
+    ) -> Tuple[List, np.ndarray, np.ndarray]:
+        """
+        Initialize a set of N isolated graphs, each with a single node.
 
-    Note:
-        This function modifies the input graphs in place and updates the tracking arrays.
-    """
-    # Preallocate the random numbers to avoid multiple calls
-    N = len(gset)
-    rands = rng.integers(N, size=[times, 2])
-    for i in tqdm(range(times), desc="Combining Graphs"):
-        rand1 = rands[i, 0]
-        rand2 = rands[i, 1]
-        obj1 = gset[rand1]
-        obj2 = gset[rand2]
-        size1 = obj1.vcount()
-        size2 = obj2.vcount()
-        # If both elements have only one vertex
-        # the second one gets a new node.
-        if size1 == size2 == 1:
-            obj1.add_vertex()
-            obj1.add_edge(0, 1)
-            gsizes[rand1] = 2
-            gassembly[rand1] = 1
-        else:
-            # Select a random node on each component
-            node1 = rng.integers(size1)
-            node2 = node1
+        This is a private helper method that sets up the initial state of the
+        graph collection.
 
-            while node1 == node2:  # avoids self-loops
-                node2 = rng.integers(size1 + size2)  # allowing cycles to form
-            if obj1.vs[node1].degree() < max_degree:
-                # If the selected nodes are from different objects
-                if node2 >= size1:
-                    # Create a graph with two connected components
-                    obj3 = obj1.disjoint_union(obj2)
-                    # Link the two disjoint networks node1-node2
-                    obj3.add_edge(node1, node2)
+        Args:
+            N (int): Number of graphs to initialize
+            rng (np.random.Generator): Random number generator
 
-                    # Replace the first element with the new graph
-                    gset[rand1] = obj3
-                    gsizes[rand1] += gsizes[rand2]
-                    gassembly[rand1] = max(gassembly[rand1], gassembly[rand2]) + 1
-                # If the nodes are from the same object -> cycle
-                else:
-                    edges = [(edge.source, edge.target) for edge in obj1.es()]
-                    if ((node1, node2) in edges) or ((node2, node1) in edges):
-                        continue
+        Returns:
+            Tuple[List, np.ndarray, np.ndarray]: A tuple containing:
+                - gset: List of igraph Graph objects (each with 1 node)
+                - gsizes: Array of ones (size 1 for each graph)
+                - gassembly: Array of zeros (initial assembly index)
+        """
+        self.gset = [None] * N
+        self.gsizes = np.ones(N)
+        self.gassembly = np.zeros(N)
+        self.rng = rng
+        for i in range(N):
+            self.gset[i] = ig.Graph(1)
+        return self.gset, self.gsizes, self.gassembly
+
+    def grow(self, max_degree: int, times: int) -> None:
+        """
+        Grow the graph collection through random recombination.
+
+        This method performs 'times' recombination operations where graphs are
+        randomly connected or cycles are formed within graphs.
+
+        Args:
+            max_degree (int): Maximum allowed degree for any node
+            times (int): Number of recombination operations to perform
+
+        Returns:
+            None (modifies the collection in place)
+
+        Note:
+            The recombination process follows specific rules:
+            - Single-node graphs can combine to form edges
+            - Larger graphs can connect through random node pairs
+            - Cycles can form within individual graphs
+            - No self-loops are created
+        """
+        self.gset, self.gsizes, self.gassembly = self._recombine(
+            self.gset, self.gsizes, self.gassembly, max_degree, times, self.rng
+        )
+
+    def _recombine(
+        self,
+        gset: List,
+        gsizes: np.ndarray,
+        gassembly: np.ndarray,
+        max_degree: int,
+        times: int,
+        rng: np.random.Generator,
+    ) -> Tuple[List, np.ndarray, np.ndarray]:
+        """
+        Internal recombination algorithm (private method).
+
+        This method implements the core graph recombination logic where:
+        1. Random graph pairs are selected
+        2. Nodes are connected between graphs or within graphs
+        3. Graph sizes and assembly indices are updated
+
+        Args:
+            gset (List[ig.Graph]): List of graphs to recombine
+            gsizes (np.ndarray): Current sizes of each graph
+            gassembly (np.ndarray): Current assembly indices
+            max_degree (int): Maximum node degree allowed
+            times (int): Number of recombination operations
+            rng (np.random.Generator): Random number generator
+
+        Returns:
+            Tuple[List, np.ndarray, np.ndarray]: Updated (gset, gsizes, gassembly)
+
+        Note:
+            This is a private method that modifies graphs in place and should
+            only be called through the public grow() method.
+        """
+        # Preallocate the random numbers to avoid multiple calls
+        N = len(gset)
+        rands = rng.integers(N, size=[times, 2])
+        for i in tqdm(range(times), desc="Combining Graphs"):
+            rand1 = rands[i, 0]
+            rand2 = rands[i, 1]
+            obj1 = gset[rand1]
+            obj2 = gset[rand2]
+            size1 = obj1.vcount()
+            size2 = obj2.vcount()
+            # If both elements have only one vertex
+            # the second one gets a new node.
+            if size1 == size2 == 1:
+                obj1.add_vertex()
+                obj1.add_edge(0, 1)
+                gsizes[rand1] = 2
+                gassembly[rand1] = 1
+            else:
+                # Select a random node on each component
+                node1 = rng.integers(size1)
+                node2 = node1
+
+                while node1 == node2:  # avoids self-loops
+                    node2 = rng.integers(size1 + size2)  # allowing cycles to form
+                if obj1.vs[node1].degree() < max_degree:
+                    # If the selected nodes are from different objects
+                    if node2 >= size1:
+                        # Create a graph with two connected components
+                        obj3 = obj1.disjoint_union(obj2)
+                        # Link the two disjoint networks node1-node2
+                        obj3.add_edge(node1, node2)
+
+                        # Replace the first element with the new graph
+                        gset[rand1] = obj3
+                        gsizes[rand1] += gsizes[rand2]
+                        gassembly[rand1] = max(gassembly[rand1], gassembly[rand2]) + 1
+                    # If the nodes are from the same object -> cycle
                     else:
-                        obj1.add_edge(node1, node2)
-                        gset[rand1] = obj1
-    return gset, gsizes, gassembly
+                        edges = [(edge.source, edge.target) for edge in obj1.es()]
+                        if ((node1, node2) in edges) or ((node2, node1) in edges):
+                            continue
+                        else:
+                            obj1.add_edge(node1, node2)
+                            gset[rand1] = obj1
+        return gset, gsizes, gassembly
 
+    def get_metrics(self) -> pd.DataFrame:
+        """
+        Calculate and return metrics for all graphs in the collection.
 
-def represent(g: ig.Graph) -> None:
-    """
-    Visualize a graph with colored components.
+        Computes various graph-theoretic metrics for each graph in the collection
+        and returns them as a pandas DataFrame.
 
-    Args:
-        g: The graph to visualize
+        Returns:
+            pd.DataFrame: DataFrame containing metrics for each graph with columns:
+                - sizes: Number of nodes in each graph
+                - cyclomatic_cpxt: Cyclomatic complexity (Edges - Nodes + 2)
+                - min_cycle_length: Length of minimum cycle (0 if acyclic)
+                - diameter: Graph diameter (longest shortest path)
+                - max_assembly: Assembly index upper bound
 
-    Returns:
-        None (displays the plot)
-    """
-    components = g.connected_components(mode="weak")
-    fig, ax = plt.subplots()
-    ig.plot(
-        components,
-        target=ax,
-        palette=ig.RainbowPalette(),
-        vertex_size=7,
-        vertex_color=list(
-            map(int, ig.rescale(components.membership, (0, 200), clamp=True))
-        ),
-        edge_width=0.7,
-    )
-    plt.show()
+        Note:
+            Cyclomatic complexity measures the complexity of the graph structure.
+            Minimum cycle length is derived from minimum node degree.
+            Diameter calculation assumes connected graphs.
+        """
+        return self._metrics(self.gset, self.gsizes, self.gassembly)
 
+    def _metrics(
+        self, gset: List, gsizes: np.ndarray, gassembly: np.ndarray
+    ) -> pd.DataFrame:
+        """
+        Internal metrics calculation (private method).
 
-def join_graphs(gset: List):
-    """
-    Combine multiple graphs into a single compound graph using disjoint unions.
+        Computes graph metrics for analysis and comparison.
 
-    Args:
-        gset: List of igraph Graph objects to be joined
+        Args:
+            gset (List[ig.Graph]): List of graph objects
+            gsizes (np.ndarray): Array of graph sizes
+            gassembly (np.ndarray): Array of assembly indices
 
-    Returns:
-        A single igraph Graph object containing all the input graphs as disjoint components
+        Returns:
+            pd.DataFrame: DataFrame with computed metrics
 
-    Note:
-        The function creates a new compound graph by sequentially performing disjoint
-        union operations on all graphs in the input list.
-    """
-    compound = ig.Graph()
-    for g in gset:
-        compound = compound.disjoint_union(g)
-    return compound
+        Note:
+            This private method contains the core metric calculations and should
+            only be accessed through the public get_metrics() method.
+        """
+        set_size = len(gset)
+        cyclomatic_cpxt = np.zeros(set_size)
+        min_cycle_length = np.zeros(set_size)
+        diameter = np.zeros(set_size)
+        for i in tqdm(range(set_size), desc="Analyzing result"):
+            component = gset[i]
+            cyclomatic_cpxt[i] = (
+                component.ecount() - component.vcount() + 2
+            )  # only 1 connected component by definition
+            min_deg = min(component.degree())  # Preposition 2.11.1 Graph Theory notes
+            if min_deg > 1:
+                min_cycle_length[i] = min_deg + 1
+            diameter[i] = component.diameter()
 
+        metrics = pd.DataFrame(
+            {
+                "sizes": gsizes,
+                "cyclomatic_cpxt": cyclomatic_cpxt,
+                "min_cycle_length": min_cycle_length,
+                "diameter": diameter,
+                "max_assembly": gassembly,
+            }
+        )
+        return metrics
 
-def metrics(gset: List, gsizes: np.ndarray, gassembly: np.ndarray) -> pd.DataFrame:
-    """
-    Combine measurements of the collection of graphs and into a pd.DataFrame
-    Args:
-        gset:       List of igraph Graph objects to be joined
-        gsize:      List of sizes corresponding to the elements in gset
-        gassembly   List of upper limits for the assembly index corresponding
-                    to the elements in gset
-    Returns:
-        metrics:    DataFrame with the following metrics for each element
-                        -sizes:             number of nodes
-                        -cyclomatic_cpxt:   cyclomatic complexity = Edges - Nodes + 2
-                        -min_cycle_length:  Length of the minimum cycle (0 if None)
-                        -diameter:          Maximum of the list of shortests paths
-                        -max_asselbly:      Index that correlates  with the steps needed
-                                            to arrive to the given component by recombination
+    def represent(self):
+        """
+        Visualize the entire graph collection.
 
-    Note:
-        The function returns a pd.DataFrame with all the metrics.
-    """
-    set_size = len(gset)
-    cyclomatic_cpxt = np.zeros(set_size)
-    min_cycle_length = np.zeros(set_size)
-    diameter = np.zeros(set_size)
-    for i in tqdm(range(set_size), desc="Analyzing result"):
-        component = gset[i]
-        cyclomatic_cpxt[i] = (
-            component.ecount() - component.vcount() + 2
-        )  # only 1 connected component by definition
-        min_deg = min(component.degree())  # Preposition 2.11.1 Graph Theory notes
-        if min_deg > 1:
-            min_cycle_length[i] = min_deg + 1
-        diameter[i] = component.diameter()
+        Creates a compound graph from all graphs in the collection and
+        displays it with colored components.
 
-    metrics = pd.DataFrame(
-        {
-            "sizes": gsizes,
-            "cyclomatic_cpxt": cyclomatic_cpxt,
-            "min_cycle_length": min_cycle_length,
-            "diameter": diameter,
-            "max_assembly": gassembly,
-        }
-    )
-    return metrics
+        Returns:
+            None (displays matplotlib plot)
+
+        Note:
+            For large collections, this may produce a complex visualization.
+            Components are colored differently for clarity.
+        """
+        multi_graph = self._join_graphs(self.gset)
+        self._represent(multi_graph)
+
+    def _represent(self, g: ig.Graph) -> None:
+        """
+        Internal visualization method (private).
+
+        Renders a graph with colored components using igraph and matplotlib.
+
+        Args:
+            g (ig.Graph): Graph to visualize
+
+        Returns:
+            None (displays the plot)
+
+        Note:
+            Uses rainbow palette for component coloring and adjusts
+            vertex/edge sizes for better visualization.
+        """
+        components = g.connected_components(mode="weak")
+        fig, ax = plt.subplots()
+        ig.plot(
+            components,
+            target=ax,
+            palette=ig.RainbowPalette(),
+            vertex_size=7,
+            vertex_color=list(
+                map(int, ig.rescale(components.membership, (0, 200), clamp=True))
+            ),
+            edge_width=0.7,
+        )
+        plt.show()
+
+    def _join_graphs(self, gset: List):
+        """
+        Create compound graph from collection (private method).
+
+        Combines multiple graphs into one using disjoint union operations.
+
+        Args:
+            gset (List[ig.Graph]): List of graphs to join
+
+        Returns:
+            ig.Graph: Compound graph containing all input graphs as disjoint components
+
+        Note:
+            This preserves the original graphs as separate components in
+            the compound graph, useful for visualization and analysis.
+        """
+        compound = ig.Graph()
+        for g in gset:
+            compound = compound.disjoint_union(g)
+        return compound
 
 
 def main(
@@ -201,45 +313,44 @@ def main(
     time_steps: int,
     rng: np.random.Generator,
     graph: bool = False,
-) -> tuple[list, np.ndarray, np.ndarray]:
+) -> GraphCollection:
     """
     Main function to run the graph recombination simulation.
 
+    Orchestrates the complete workflow:
+    1. Creates a graph collection
+    2. Grows it through recombination
+    3. Computes and displays metrics
+    4. Optionally visualizes the result
+
     Args:
-        N: Number of initial graphs
-        max_degree: Maximum allowed degree for nodes
-        rng: Random number generator
+        N (int): Number of initial graphs in the collection
+        max_degree (int): Maximum allowed degree for any node
+        time_steps (int): Number of recombination operations to perform
+        rng (np.random.Generator): Random number generator for reproducibility
+        graph (bool): Whether to display graph visualization (default: False)
 
     Returns:
-        None
+        GraphCollection: The grown graph collection object
+
+    Note:
+        This function displays several plots:
+        - Histogram of graph sizes
+        - Scatter plot of cyclomatic complexity vs diameter
+        - Optional graph visualization if graph=True
     """
-    gset, gsizes, gassembly = initialize(N)
-    gset, gsizes, gassembly = recombine(
-        gset, gsizes, gassembly, max_degree, time_steps, rng
-    )
-    max_index = np.argmax(gsizes)
-    max_size = gsizes[max_index]
-    max_assembly = gassembly[max_index]
+    collection = GraphCollection(N, rng)
+    collection.grow(max_degree, time_steps)
+    data = collection.get_metrics()
+
+    max_index = np.argmax(collection.gsizes)
+    max_size = collection.gsizes[max_index]
+    max_assembly = collection.gassembly[max_index]
     print("Biggest element size: ", max_size)
     print("Assembly index upper bound: ", max_assembly)
 
-    data = metrics(gset, gsizes, gassembly)
-
     sns.histplot(data.sizes)
     plt.show()
-
-    sorted_index = np.argsort(data.diameter)
-    x = data.diameter[sorted_index]
-    y = data.cyclomatic_cpxt[sorted_index]
-
-    def equation(x, a, b, c, d, e):
-        return a * x**4 + b * x**3 + c * x**2 + d * x + e
-
-    popt, pcov = curve_fit(equation, x, y)
-    a, b, c, d, e = popt
-    ypred = equation(x, *popt)
-    perr = np.sqrt(np.diag(pcov))
-    ci = 1.96 * perr
 
     scatter = sns.scatterplot(
         data,
@@ -248,8 +359,6 @@ def main(
         c=data.max_assembly,
         label="Generated data",
     )
-    plt.plot(x, ypred, label="Fit")
-    # plt.fill_between(x, ypred - ci[0], ypred + ci[0], color='red', alpha=0.2, label='95% Confidence Interval')
     plt.xlabel("Component Diameter")
     plt.ylabel("Cyclomatic Complexity")
     plt.title("Cyclomatic Complexity vs Diameter per component")
@@ -259,10 +368,8 @@ def main(
     plt.show()
 
     if graph == True:
-        compound = join_graphs(gset)
-        represent(compound)
-
-    return gset, gsizes, gassembly
+        collection.represent()
+    return collection
 
 
 if __name__ == "__main__":
@@ -287,10 +394,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", type=bool, help="Use a hardcoded seed")
     args = parser.parse_args()
 
-    if args.s:
-        semilla = 51001430439489238069396834186967689176
-    else:
-        semilla = secrets.randbits(128)
+    semilla = 42 if args.s else secrets.randbits(128)
     rng = np.random.default_rng(semilla)
     main(
         args.set_size,
