@@ -38,8 +38,8 @@ class GraphCollection:
         Returns:
             None
         """
+        rng = np.random.default_rng(seed) if seed else np.random.default_rng(42)
         self.gset, self.gsizes, self.gassembly = self._initialize(N, rng)
-        self.rng = np.random.default_rng(seed) if seed else np.random.default_rng(42)
 
     def _initialize(
         self, N: int, rng: np.random.Generator
@@ -190,6 +190,7 @@ class GraphCollection:
             Cyclomatic complexity measures the complexity of the graph structure.
             Minimum cycle length is derived from minimum node degree.
             Diameter calculation assumes connected graphs.
+            Returns 1 if the graph has a Hamiltonian Cycle, 0 otherwise.
         """
         return self._metrics(self.gset, self.gsizes, self.gassembly)
 
@@ -217,6 +218,7 @@ class GraphCollection:
         cyclomatic_cpxt = np.zeros(set_size)
         min_cycle_length = np.zeros(set_size)
         diameter = np.zeros(set_size)
+        has_hamc = np.zeros(set_size)
         for i in tqdm(range(set_size), desc="Analyzing result"):
             component = gset[i]
             cyclomatic_cpxt[i] = (
@@ -226,6 +228,8 @@ class GraphCollection:
             if min_deg > 1:
                 min_cycle_length[i] = min_deg + 1
             diameter[i] = component.diameter()
+            # Applying Dirac's Criterion (Graph Theory Notes Corollary 2.14.5)
+            has_hamc[i] = 0 if min(gset[i].degree()) < set_size / 2 else 1
 
         metrics = pd.DataFrame(
             {
@@ -234,6 +238,7 @@ class GraphCollection:
                 "min_cycle_length": min_cycle_length,
                 "diameter": diameter,
                 "max_assembly": gassembly,
+                "has_hamc": has_hamc,
             }
         )
         return metrics
@@ -350,19 +355,20 @@ def main(
     print("Assembly index upper bound: ", max_assembly)
 
     sns.histplot(data.sizes)
+    plt.yscale("log")
     plt.show()
 
     scatter = sns.scatterplot(
         data,
         x="diameter",
         y="cyclomatic_cpxt",
-        c=data.max_assembly,
+        c=data.has_hamc,
         label="Generated data",
     )
     plt.xlabel("Component Diameter")
     plt.ylabel("Cyclomatic Complexity")
     plt.title("Cyclomatic Complexity vs Diameter per component")
-    plt.colorbar(scatter.collections[0], label="Max assembly")
+    plt.colorbar(scatter.collections[0], label="Has hamc")
     plt.legend()
     plt.grid(True)
     plt.show()
@@ -374,10 +380,10 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog="constant_components",
+        prog="graph_collection",
         usage="%(prog)s set_size max_degree iterations bonds_per_iteration [options]",
         description="Script that generates a collection of graphs from a simple combination rule",
-        epilog="Example:  python3 constant_components.py 100 6 150 -g True -s True",
+        epilog="Example:  python3 graph_collection.py 100 6 150 -g True -s True",
     )
     parser.add_argument("set_size", type=int, help="Size of the set")
     parser.add_argument(
