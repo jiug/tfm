@@ -156,7 +156,6 @@ class GraphCollection:
                         obj3 = obj1.disjoint_union(obj2)
                         # Link the two disjoint networks node1-node2
                         obj3.add_edge(node1, node2)
-
                         # Replace the first element with the new graph
                         gset[rand1] = obj3
                         gsizes[rand1] += gsizes[rand2]
@@ -164,9 +163,11 @@ class GraphCollection:
                     # If the nodes are from the same object -> cycle
                     else:
                         edges = [(edge.source, edge.target) for edge in obj1.es()]
+                        # Avoids multiple edges between two given nodes
                         if ((node1, node2) in edges) or ((node2, node1) in edges):
                             continue
                         else:
+                            # Adds a link if both nodes are not adjacent
                             obj1.add_edge(node1, node2)
                             gset[rand1] = obj1
         return gset, gsizes, gassembly
@@ -185,12 +186,19 @@ class GraphCollection:
                 - min_cycle_length: Length of minimum cycle (0 if acyclic)
                 - diameter: Graph diameter (longest shortest path)
                 - max_assembly: Assembly index upper bound
+                - has_hamc: 1 if the graph has a Hamiltonian cycle, 0 otherwise
+                - mean_deg: Average degree of each component
+                - ccoef: Average clustering coefficient of each component
+                - modularity: Modularity of each component
 
         Note:
             Cyclomatic complexity measures the complexity of the graph structure.
             Minimum cycle length is derived from minimum node degree.
             Diameter calculation assumes connected graphs.
             Returns 1 if the graph has a Hamiltonian Cycle, 0 otherwise.
+            Degree of the graph is the average of the degrees of its nodes.
+            Clustering coefficient of a graph is the average of its nodes.
+            Modularity measures how well the graph can be separated in communities.
         """
         return self._metrics(self.gset, self.gsizes, self.gassembly)
 
@@ -219,8 +227,12 @@ class GraphCollection:
         min_cycle_length = np.zeros(set_size)
         diameter = np.zeros(set_size)
         has_hamc = np.zeros(set_size)
+        mean_degree = np.zeros(set_size)
+        ccoef = np.zeros(set_size)
+        # modularity = np.zeros(set_size)
         for i in tqdm(range(set_size), desc="Analyzing result"):
             component = gset[i]
+            degrees = component.degree()
             cyclomatic_cpxt[i] = (
                 component.ecount() - component.vcount() + 2
             )  # only 1 connected component by definition
@@ -229,7 +241,10 @@ class GraphCollection:
                 min_cycle_length[i] = min_deg + 1
             diameter[i] = component.diameter()
             # Applying Dirac's Criterion (Graph Theory Notes Corollary 2.14.5)
-            has_hamc[i] = 0 if min(gset[i].degree()) < set_size / 2 else 1
+            has_hamc[i] = 0 if min(degrees) < set_size / 2 else 1
+            mean_degree[i] = np.mean(degrees)
+            ccoef[i] = component.transitivity_undirected()
+            # modularity[i] = component.modularity()
 
         metrics = pd.DataFrame(
             {
@@ -239,6 +254,9 @@ class GraphCollection:
                 "diameter": diameter,
                 "max_assembly": gassembly,
                 "has_hamc": has_hamc,
+                "mean_deg": mean_degree,
+                "ccoef": ccoef,
+                # "modularity": modularity,
             }
         )
         return metrics
@@ -373,7 +391,19 @@ def main(
     plt.grid(True)
     plt.show()
 
-    if graph == True:
+    #! TODO Fix this graph, array sizes not matching
+    scatter2 = sns.scatterplot(
+        data, x="diameter", y="ccoef", c=data.mean_deg, label="Graph collection"
+    )
+    plt.xlabel("Component Diameter")
+    plt.ylabel("Mean Clustering Coefficient")
+    plt.title("Clustering Coefficient vs Diameter per component")
+    plt.colorbar(scatter2.collections[0], label="Graph degree")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    if graph:
         collection.represent()
     return collection
 
