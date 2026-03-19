@@ -1,6 +1,9 @@
+import math as m
+
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from oeis_sequences import OEISsequences as oeis
 from tqdm import tqdm
 
 
@@ -50,7 +53,7 @@ def main() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     pool, copies, indexes, entropies = init_pool(1000, 1000)
     n = np.sum(copies)
     probs = copies / n
-    for i in tqdm(range(15000), desc="Iterations: "):
+    for i in tqdm(range(5000), desc="Iterations: "):
         new_pool, new_copies, new_entropies = combine(pool, copies, indexes, entropies)
         pool = new_pool
         copies = new_copies
@@ -72,6 +75,32 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
-    plt.hist(entropies)
+    sns.histplot(entropies, bins=20)
+    plt.yscale("log")
+    plt.xlabel("Entropy")
+    plt.title("Shannon entropy distribution")
+    plt.show()
+
+    x = 2 * (1 + np.arange(10))
+    ck = 2**x
+    bk = np.sqrt(2 / (m.pi * x)) * 2**x
+    # bk = [m.comb(n, int(n / 2)) for n in x]
+    rk = [oeis.A000031(n) for n in x]
+    # ek = [oeis.A000014(n) for n in x]
+    dk = np.zeros(10)
+    for i in range(len(x)):
+        dk[i] = m.factorial(int(x[i])) / (
+            m.factorial(int(x[i] / 2)) * (m.factorial(int(x[i] / 2 + 1)))
+        )
+
+    plt.plot(x, ck, label=r"$C_k^{(N)}$")
+    plt.plot(x, bk, label=r"$B_k^{(N)}$")
+    plt.plot(x, rk, label=r"$R_k^{(N)}$")
+    plt.plot(x, dk, label=r"$D_k^{(N)}$")
+    # plt.plot(ek)
+    plt.title("Number of strings by type and size")
+    plt.xlabel("Size")
+    plt.ylabel("Number of possible strings")
+    plt.legend()
     plt.yscale("log")
     plt.show()
