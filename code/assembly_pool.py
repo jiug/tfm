@@ -19,10 +19,12 @@ class AssemblyPool:
             "entropy": np.array([0, 0]),
             "assembly": np.array([0, 0]),
             "history": np.array(["1", "0"]),
+            "steps": np.array([0, 0]),
         }
         pool = pd.DataFrame(data=initial_pool)
         return pool
-
+    
+    # Function that concatenates two random elements from the assembly pool
     def combine(self) -> None:
         n = np.sum(self.pool.copy_number)
         prob = self.pool.copy_number / n
@@ -66,6 +68,7 @@ class AssemblyPool:
                 "entropy": np.array([string_entropy(new_element)]),
                 "assembly": np.array([0]),
                 "history": np.array(history),
+                "steps": np.array(np.max(self.pool.steps[index]) + 1),
             }
             # Convert the dictionary to DataFrame
             data = pd.DataFrame(data=new_observation)
@@ -73,6 +76,10 @@ class AssemblyPool:
             self.pool = pd.concat([self.pool, data], ignore_index=True)
         return
 
+    def interpret(self):
+        for i in element:
+            if i == '0':
+                
 
 def string_entropy(string: str) -> float:
     n = len(string)
@@ -80,6 +87,8 @@ def string_entropy(string: str) -> float:
     n1 = n - n0
     p0 = n0 / n
     p1 = n1 / n
+    if n0 == 0 or n1 == 0:
+        return 0
     return -p0 * np.log2(p0) - p1 * np.log2(p1)
 
 
@@ -117,23 +126,16 @@ def string_entropy(string: str) -> float:
 #
 
 
-def main() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    pool, copies, indexes, entropies = init_pool(1000, 1000)
-    n = np.sum(copies)
-    probs = copies / n
-    for i in tqdm(range(5000), desc="Iterations: "):
-        new_pool, new_copies, new_entropies = combine(pool, copies, indexes, entropies)
-        pool = new_pool
-        copies = new_copies
-        entropies = new_entropies
+def main(n0, n1) -> None:
+    ap = AssemblyPool(n0, n1)
+    for i in tqdm(range(10000), desc="Calculating iterations:"):
+        ap.combine()
 
-    return pool, copies, indexes, entropies
-
-
-if __name__ == "__main__":
-    pool, copies, indexes, entropies = main()
-    sizes = np.array([len(x) for x in pool])
-    scatter = sns.scatterplot(x=sizes, y=copies, hue=entropies)
+    ap.pool["size"] = ap.pool.element.str.len()
+    ap.pool["balanced"] = ap.pool.element.str.count("0") == ap.pool.element.str.count(
+        "1"
+    )
+    sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
     plt.grid(which="both", linestyle=":")
     plt.yscale("log")
     plt.xscale("log")
@@ -143,7 +145,14 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
-    sns.histplot(entropies, bins=20)
+    ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
+    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="log_copy")
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.grid(which="both")
+    plt.show()
+
+    sns.histplot(ap.pool.entropy, bins=20)
     plt.yscale("log")
     plt.xlabel("Entropy")
     plt.title("Shannon entropy distribution")
@@ -172,3 +181,8 @@ if __name__ == "__main__":
     plt.legend()
     plt.yscale("log")
     plt.show()
+    return
+
+
+if __name__ == "__main__":
+    main(50, 50)
