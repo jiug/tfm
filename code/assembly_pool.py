@@ -1,5 +1,7 @@
+import argparse
 import math as m
 
+import lempel_ziv_complexity as lz
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -16,14 +18,18 @@ class AssemblyPool:
         initial_pool = {
             "element": np.array(["1", "0"]),
             "copy_number": np.array([n1, n0]),
+            "size": np.array([1, 1]),
+            "balanced": np.array([False, False]),
+            "dyck_word": np.array([False, False]),
             "entropy": np.array([0, 0]),
             "assembly": np.array([0, 0]),
             "history": np.array(["1", "0"]),
             "steps": np.array([0, 0]),
+            "lz_comp": np.array([1, 1]),
         }
         pool = pd.DataFrame(data=initial_pool)
         return pool
-    
+
     # Function that concatenates two random elements from the assembly pool
     def combine(self) -> None:
         n = np.sum(self.pool.copy_number)
@@ -62,13 +68,19 @@ class AssemblyPool:
                 ]
             # Add new element to the assembly pool
             # Same structure as the __init__ dictionary
+            balanced = new_element.count("0") == new_element.count("1")
+            dyck_word = np.array([check_word(new_element)])
             new_observation = {
                 "element": np.array([new_element]),
                 "copy_number": np.array([1]),
+                "size": np.array(len(new_element)),
+                "balanced": balanced,
+                "dyck_word": balanced and dyck_word,
                 "entropy": np.array([string_entropy(new_element)]),
                 "assembly": np.array([0]),
                 "history": np.array(history),
                 "steps": np.array(np.max(self.pool.steps[index]) + 1),
+                "lz_comp": lz.lempel_ziv_complexity(new_element),
             }
             # Convert the dictionary to DataFrame
             data = pd.DataFrame(data=new_observation)
@@ -76,10 +88,41 @@ class AssemblyPool:
             self.pool = pd.concat([self.pool, data], ignore_index=True)
         return
 
-    def interpret(self):
-        for i in element:
-            if i == '0':
-                
+    def evolve(self, steps: int) -> pd.DataFrame:
+        init_data = {
+            "count": [len(self.pool)],
+            "count_balanced": [np.sum(self.pool.balanced)],
+            "count_dyck_words": [np.sum(self.pool.dyck_word)],
+            "max_size": [np.max(self.pool.size)],
+            "max_lz_comp": [np.max(self.pool.lz_comp)],
+        }
+        evolution = pd.DataFrame(init_data)
+
+        for i in tqdm(range(steps), desc="Calculating iterations"):
+            self.combine()
+            evol_measures = {
+                "count": [len(self.pool)],
+                "count_balanced": [np.sum(self.pool.balanced)],
+                "count_dyck_words": [np.sum(self.pool.dyck_word)],
+                "max_size": [np.max(self.pool.size)],
+                "max_lz_comp": [np.max(self.pool.lz_comp)],
+            }
+            evolution = pd.concat(
+                [evolution, pd.DataFrame(evol_measures)], ignore_index=True
+            )
+        return evolution
+
+
+def check_word(word: str) -> bool:
+    first = word[0]
+    other = str(1 - int(word[0]))
+    for _ in range(len(word)):
+        if word[:-1].count(first) <= word[:-1].count(other):
+            continue
+        else:
+            return False
+    return True
+
 
 def string_entropy(string: str) -> float:
     n = len(string)
@@ -92,49 +135,33 @@ def string_entropy(string: str) -> float:
     return -p0 * np.log2(p0) - p1 * np.log2(p1)
 
 
-# def init_pool(
-#     n_0: int, n_1: int
-# ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-#     pool = np.array(["0", "1"])
-#     copies = np.array([n_0, n_1])
-#     indexes = np.array([0, 0])
-#     entropies = np.zeros(2)
-#     entropies = np.array([string_entropy(string) for string in pool])
-#     return pool, copies, indexes, entropies
+def evol_graph(evolution):
+    x = np.arange(len(evolution))
+    metrics = [
+        "Element number",
+        "Balanced number",
+        "Dyck Word number",
+        "Maximum size",
+        "Maximum L-Z Complexity",
+    ]
+    i = 0
+    for col in evolution.columns:
+        sns.lineplot(data=evolution, x=x, y=col, label=metrics[i])
+        i += 1
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.legend()
+    plt.xlabel("Simulation step")
+    plt.title("Evolution metrics")
+    plt.grid(which="both")
+    plt.tight_layout()
+    plt.show()
 
 
-# def combine(
-#     pool: np.ndarray, copies: np.ndarray, indexes: np.ndarray, entropies: np.ndarray
-# ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-#     n = np.sum(copies)
-#     items = np.random.choice(pool, size=2, p=copies / n)
-#     new_copies = copies
-#     new_indexes = indexes
-#     new_entropies = entropies
-#
-#     new_element = items[0] + items[1]
-#     if new_element in pool:
-#         new_pool = pool
-#         idx = np.where(pool == new_element)
-#         new_copies[idx] += 1
-#         new_indexes = indexes
-#     else:
-#         new_pool = np.append(pool, new_element)
-#         new_copies = np.append(new_copies, 1)
-#         new_entropies = np.append(entropies, string_entropy(new_element))
-#     return new_pool, new_copies, new_entropies
-#
-
-
-def main(n0, n1) -> None:
+def main(n0: int, n1: int, steps: int) -> None:
     ap = AssemblyPool(n0, n1)
-    for i in tqdm(range(10000), desc="Calculating iterations:"):
-        ap.combine()
-
-    ap.pool["size"] = ap.pool.element.str.len()
-    ap.pool["balanced"] = ap.pool.element.str.count("0") == ap.pool.element.str.count(
-        "1"
-    )
+    evolution = ap.evolve(steps)
+    evol_graph(evolution)
     sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
     plt.grid(which="both", linestyle=":")
     plt.yscale("log")
@@ -146,7 +173,7 @@ def main(n0, n1) -> None:
     plt.show()
 
     ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
-    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="log_copy")
+    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="steps")
     plt.yscale("log")
     plt.xscale("log")
     plt.grid(which="both")
@@ -185,4 +212,16 @@ def main(n0, n1) -> None:
 
 
 if __name__ == "__main__":
-    main(50, 50)
+    parser = argparse.ArgumentParser(
+        prog="assembly_pool",
+        usage="%(prog)s initial-1s initial-0s evolution-steps ",
+        description="Script that evolves pool of binary strings following simple stochastic combination rules",
+        epilog="Example:  ipython assembly_pool.py 10 10 5000",
+    )
+    parser.add_argument("n1", type=int, help="1's initial copy number")
+    parser.add_argument("n0", type=int, help="0's initial copy number")
+    parser.add_argument("steps", type=int, help="Number of evolution steps")
+    # parser.add_argument("-s", type=bool, help="Use a hardcoded seed")
+    args = parser.parse_args()
+
+    main(args.n1, args.n0, args.steps)
