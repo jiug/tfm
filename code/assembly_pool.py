@@ -26,6 +26,7 @@ class AssemblyPool:
             "history": np.array(["1", "0"]),
             "steps": np.array([0, 0]),
             "lz_comp": np.array([1, 1]),
+            "has_inversion": [True, True],
         }
         pool = pd.DataFrame(data=initial_pool)
         return pool
@@ -56,7 +57,6 @@ class AssemblyPool:
             self.pool.at[idx[0], "copy_number"] = cnum
             return
         else:
-
             # Bigger elements are always first
             if reorg:
                 history = [
@@ -81,6 +81,7 @@ class AssemblyPool:
                 "history": np.array(history),
                 "steps": np.array(np.max(self.pool.steps[index]) + 1),
                 "lz_comp": lz.lempel_ziv_complexity(new_element),
+                "has_inversion": invert_string(new_element) in self.pool.element,
             }
             # Convert the dictionary to DataFrame
             data = pd.DataFrame(data=new_observation)
@@ -95,22 +96,43 @@ class AssemblyPool:
             "count_dyck_words": [np.sum(self.pool.dyck_word)],
             "max_size": [np.max(self.pool.size)],
             "max_lz_comp": [np.max(self.pool.lz_comp)],
+            "innovation": [0],
+            "extinction": [0],
         }
         evolution = pd.DataFrame(init_data)
 
         for i in tqdm(range(steps), desc="Calculating iterations"):
+            innovation_event = max(evolution.innovation)
+            extinction_event = max(evolution.extinction)
+            count = len(self.pool.element)
             self.combine()
+            if len(self.pool.element) > count:
+                innovation_event += 1
+            elif len(self.pool.element) < count:
+                extinction_event += 1
             evol_measures = {
                 "count": [len(self.pool)],
                 "count_balanced": [np.sum(self.pool.balanced)],
                 "count_dyck_words": [np.sum(self.pool.dyck_word)],
                 "max_size": [np.max(self.pool.size)],
                 "max_lz_comp": [np.max(self.pool.lz_comp)],
+                "innovation": [innovation_event],
+                "extinction": [extinction_event],
             }
             evolution = pd.concat(
                 [evolution, pd.DataFrame(evol_measures)], ignore_index=True
             )
         return evolution
+
+    def modularity(self, idx: int) -> np.ndarray:
+        string = self.pool.element[idx]
+        string_length = len(string)
+        elements = self.pool.element
+        modularity = np.zeros(len(self.pool.element))
+        for element in elements[elements.str.len() < string_length]):
+    
+            modularity[] = string.count(element)
+        return modularity
 
 
 def check_word(word: str) -> bool:
@@ -135,6 +157,10 @@ def string_entropy(string: str) -> float:
     return -p0 * np.log2(p0) - p1 * np.log2(p1)
 
 
+def invert_string(string: str) -> str:
+    return "".join([str(1 - int(x)) for x in string])
+
+
 def evol_graph(evolution):
     x = np.arange(len(evolution))
     metrics = [
@@ -145,7 +171,7 @@ def evol_graph(evolution):
         "Maximum L-Z Complexity",
     ]
     i = 0
-    for col in evolution.columns:
+    for col in evolution.columns[:-2]:
         sns.lineplot(data=evolution, x=x, y=col, label=metrics[i])
         i += 1
     plt.yscale("log")
@@ -162,6 +188,11 @@ def main(n0: int, n1: int, steps: int) -> None:
     ap = AssemblyPool(n0, n1)
     evolution = ap.evolve(steps)
     evol_graph(evolution)
+
+    sns.lineplot(data=evolution, x=np.arange(steps + 1), y="innovation")
+    sns.lineplot(data=evolution, x=np.arange(steps + 1), y="extinction")
+    plt.show()
+    # Graphs
     sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
     plt.grid(which="both", linestyle=":")
     plt.yscale("log")
@@ -183,6 +214,22 @@ def main(n0: int, n1: int, steps: int) -> None:
     plt.yscale("log")
     plt.xlabel("Entropy")
     plt.title("Shannon entropy distribution")
+    plt.show()
+
+    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.ylabel("Entropy")
+    plt.xlabel("Lempel-Ziv Complexity")
+    plt.title("Complexity vs Entropy")
+    plt.show()
+
+    sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
+    # plt.xscale("log")
+    # plt.yscale("log")
+    plt.ylabel("Complexity")
+    plt.xlabel("Size")
+    plt.title("Correlation between size and comp")
     plt.show()
 
     x = 2 * (1 + np.arange(10))
