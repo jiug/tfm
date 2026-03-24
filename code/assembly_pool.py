@@ -11,28 +11,38 @@ from tqdm import tqdm
 
 
 class AssemblyPool:
-    def __init__(self, n1: int, n0: int) -> None:
+    def __init__(self, n1: int, n0: int, batch_size: int = 1000) -> None:
+        self._pending_elements = []
+        self._batch_size = batch_size
         self.pool = self._initialize(n1, n0)
 
     def _initialize(self, n1, n0) -> pd.DataFrame:
         initial_pool = {
-            "element": np.array(["1", "0"]),
-            "copy_number": np.array([n1, n0]),
-            "size": np.array([1, 1]),
-            "balanced": np.array([False, False]),
-            "dyck_word": np.array([False, False]),
-            "entropy": np.array([0, 0]),
-            "assembly": np.array([0, 0]),
-            "history": np.array(["1", "0"]),
-            "steps": np.array([0, 0]),
-            "lz_comp": np.array([1, 1]),
+            "element": ["1", "0"],
+            "copy_number": [n1, n0],
+            "size": [1, 1],
+            "balanced": [False, False],
+            "dyck_word": [False, False],
+            "entropy": [0, 0],
+            "assembly": [0, 0],
+            "history": ["1", "0"],
+            "steps": [0, 0],
+            "lz_comp": [1, 1],
             "has_inversion": [True, True],
         }
         pool = pd.DataFrame(data=initial_pool)
         return pool
 
+    def _update_elements(self):
+        # Convert the dictionary to DataFrame
+        data = pd.DataFrame(self._pending_elements)
+        # Add a new observation to the dataframe
+        self.pool = pd.concat([self.pool, data], ignore_index=True)
+        # Restore pending elements to initial state
+        self._pending_elements = []
+
     # Function that concatenates two random elements from the assembly pool
-    def combine(self) -> None:
+    def combine(self, a003313: pd.DataFrame) -> None:
         n = np.sum(self.pool.copy_number)
         prob = self.pool.copy_number / n
         index = np.random.choice(np.arange(len(self.pool.element)), size=2, p=prob)
@@ -68,44 +78,50 @@ class AssemblyPool:
                 ]
             # Add new element to the assembly pool
             # Same structure as the __init__ dictionary
+            length = len(new_element)
+            inverted = invert_string(new_element)
             balanced = new_element.count("0") == new_element.count("1")
-            dyck_word = np.array([check_word(new_element)])
+            dyck_word = check_word(new_element)
             new_observation = {
-                "element": np.array([new_element]),
-                "copy_number": np.array([1]),
-                "size": np.array(len(new_element)),
+                "element": new_element,
+                "copy_number": 1,
+                "size": len(new_element),
                 "balanced": balanced,
                 "dyck_word": balanced and dyck_word,
-                "entropy": np.array([string_entropy(new_element)]),
-                "assembly": np.array([0]),
-                "history": np.array(history),
-                "steps": np.array(np.max(self.pool.steps[index]) + 1),
+                "entropy": string_entropy(new_element),
+                "assembly": a003313.iloc[length, 1],
+                "history": history,
+                "steps": np.max(self.pool.steps[index]) + 1,
                 "lz_comp": lz.lempel_ziv_complexity(new_element),
-                "has_inversion": invert_string(new_element) in self.pool.element,
+                "has_inversion": (
+                    True if sum(self.pool.element.isin([inverted])) > 0 else False
+                ),
             }
-            # Convert the dictionary to DataFrame
-            data = pd.DataFrame(data=new_observation)
-            # Add a new observation to the dataframe
-            self.pool = pd.concat([self.pool, data], ignore_index=True)
+            self._pending_elements.append(new_observation)
+
+            if len(self._pending_elements) == self._batch_size:
+                self._update_elements()
+        self._update_elements()
         return
 
     def evolve(self, steps: int) -> pd.DataFrame:
         init_data = {
             "count": [len(self.pool)],
             "count_balanced": [np.sum(self.pool.balanced)],
-            "count_dyck_words": [np.sum(self.pool.dyck_word)],
             "max_size": [np.max(self.pool.size)],
             "max_lz_comp": [np.max(self.pool.lz_comp)],
+            "assembly_ceiling": [0],
+            "ensenble_entropy": [self.ensemble_entropy()],
             "innovation": [0],
             "extinction": [0],
         }
         evolution = pd.DataFrame(init_data)
-
-        for i in tqdm(range(steps), desc="Calculating iterations"):
+        a003313 = pd.read_csv("A003313.csv", sep=" ", header=None, engine="python")
+        for _ in tqdm(range(steps), desc="Calculating iterations"):
             innovation_event = max(evolution.innovation)
             extinction_event = max(evolution.extinction)
             count = len(self.pool.element)
-            self.combine()
+            self.combine(a003313)
             if len(self.pool.element) > count:
                 innovation_event += 1
             elif len(self.pool.element) < count:
@@ -116,6 +132,8 @@ class AssemblyPool:
                 "count_dyck_words": [np.sum(self.pool.dyck_word)],
                 "max_size": [np.max(self.pool.size)],
                 "max_lz_comp": [np.max(self.pool.lz_comp)],
+                "assembly_ceiling": [max(self.pool.assembly)],
+                "ensemble_entropy": [self.ensemble_entropy()],
                 "innovation": [innovation_event],
                 "extinction": [extinction_event],
             }
@@ -126,13 +144,20 @@ class AssemblyPool:
 
     def modularity(self, idx: int) -> np.ndarray:
         string = self.pool.element[idx]
-        string_length = len(string)
         elements = self.pool.element
         modularity = np.zeros(len(self.pool.element))
-        for element in elements[elements.str.len() < string_length]):
-    
-            modularity[] = string.count(element)
+        for i in range(len(elements)):
+            modularity[i] = string.count(elements[i])
         return modularity
+
+    def ensemble(self) -> None:
+        n = np.sum(self.pool.copy_number)
+        self.pool["ensemble"] = self.pool.copy_number / n
+        return
+
+    def ensemble_entropy(self) -> float:
+        self.ensemble()
+        return -np.sum(self.pool.ensemble * np.log2(self.pool.ensemble))
 
 
 def check_word(word: str) -> bool:
@@ -161,7 +186,7 @@ def invert_string(string: str) -> str:
     return "".join([str(1 - int(x)) for x in string])
 
 
-def evol_graph(evolution):
+def evol_graph(evolution: pd.DataFrame) -> None:
     x = np.arange(len(evolution))
     metrics = [
         "Element number",
@@ -169,10 +194,13 @@ def evol_graph(evolution):
         "Dyck Word number",
         "Maximum size",
         "Maximum L-Z Complexity",
+        "Assembly Ceiling",
+        "Ensemble Entropy",
+        "Hello",
     ]
     i = 0
-    for col in evolution.columns[:-2]:
-        sns.lineplot(data=evolution, x=x, y=col, label=metrics[i])
+    for col in evolution.columns:
+        sns.lineplot(data=evolution, x=x, y=col, label=evolution.columns[i])
         i += 1
     plt.yscale("log")
     plt.xscale("log")
@@ -268,7 +296,6 @@ if __name__ == "__main__":
     parser.add_argument("n1", type=int, help="1's initial copy number")
     parser.add_argument("n0", type=int, help="0's initial copy number")
     parser.add_argument("steps", type=int, help="Number of evolution steps")
-    # parser.add_argument("-s", type=bool, help="Use a hardcoded seed")
     args = parser.parse_args()
 
     main(args.n1, args.n0, args.steps)
