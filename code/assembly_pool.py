@@ -186,6 +186,23 @@ def invert_string(string: str) -> str:
     return "".join([str(1 - int(x)) for x in string])
 
 
+def coarse_grain(string: str, window: int) -> str:
+    chunks = [
+        string[x * window : min((x + 1) * window, len(string))]
+        for x in range(len(string) // window + 1)
+    ]
+
+    averages = [
+        np.round(np.mean(np.array([int(i) for i in list(chunk)]))) for chunk in chunks
+    ]
+    print(averages)
+    coarse_grained_string = ""
+    for i in range(len(averages)):
+        coarse_grained_string += f"{int(averages[i])}"
+    coarse_grained_string = coarse_grained_string[: len(string)]
+    return coarse_grained_string
+
+
 def evol_graph(evolution: pd.DataFrame) -> None:
     x = np.arange(len(evolution))
     metrics = [
@@ -207,59 +224,12 @@ def evol_graph(evolution: pd.DataFrame) -> None:
     plt.legend()
     plt.xlabel("Simulation step")
     plt.title("Evolution metrics")
-    plt.grid(which="both")
+    plt.grid(which="major")
     plt.tight_layout()
     plt.show()
 
 
-def main(n0: int, n1: int, steps: int) -> None:
-    ap = AssemblyPool(n0, n1)
-    evolution = ap.evolve(steps)
-    evol_graph(evolution)
-
-    sns.lineplot(data=evolution, x=np.arange(steps + 1), y="innovation")
-    sns.lineplot(data=evolution, x=np.arange(steps + 1), y="extinction")
-    plt.show()
-    # Graphs
-    sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
-    plt.grid(which="both", linestyle=":")
-    plt.yscale("log")
-    plt.xscale("log")
-    plt.xlabel("Size")
-    plt.ylabel("Copy number")
-    plt.title("Copies of bitstrings by length")
-    plt.legend()
-    plt.show()
-
-    ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
-    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="steps")
-    plt.yscale("log")
-    plt.xscale("log")
-    plt.grid(which="both")
-    plt.show()
-
-    sns.histplot(ap.pool.entropy, bins=20)
-    plt.yscale("log")
-    plt.xlabel("Entropy")
-    plt.title("Shannon entropy distribution")
-    plt.show()
-
-    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy")
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.ylabel("Entropy")
-    plt.xlabel("Lempel-Ziv Complexity")
-    plt.title("Complexity vs Entropy")
-    plt.show()
-
-    sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
-    # plt.xscale("log")
-    # plt.yscale("log")
-    plt.ylabel("Complexity")
-    plt.xlabel("Size")
-    plt.title("Correlation between size and comp")
-    plt.show()
-
+def total_counts() -> None:
     x = 2 * (1 + np.arange(10))
     ck = 2**x
     bk = np.sqrt(2 / (m.pi * x)) * 2**x
@@ -283,6 +253,47 @@ def main(n0: int, n1: int, steps: int) -> None:
     plt.legend()
     plt.yscale("log")
     plt.show()
+
+
+def main(n0: int, n1: int, steps: int) -> None:
+    ap = AssemblyPool(n0, n1)
+    evolution = ap.evolve(steps)
+    evol_graph(evolution)
+
+    # Graphs
+    sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
+    plt.grid(which="both", linestyle=":")
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.xlabel("Size")
+    plt.ylabel("Copy number")
+    plt.title("Copies of bitstrings by length")
+    plt.legend()
+    plt.show()
+
+    ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
+    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="steps")
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.grid(which="both")
+    plt.show()
+
+    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.ylabel("Entropy")
+    plt.xlabel("Lempel-Ziv Complexity")
+    plt.title("Complexity vs Entropy")
+    plt.show()
+
+    sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
+    # plt.xscale("log")
+    # plt.yscale("log")
+    plt.ylabel("Complexity")
+    plt.xlabel("Size")
+    plt.title("Correlation between size and comp")
+    plt.show()
+
     return
 
 
