@@ -33,7 +33,7 @@ class AssemblyPool:
         pool = pd.DataFrame(data=initial_pool)
         return pool
 
-    def _update_elements(self):
+    def _update_elements(self) -> None:
         # Convert the dictionary to DataFrame
         data = pd.DataFrame(self._pending_elements)
         # Add a new observation to the dataframe
@@ -42,14 +42,17 @@ class AssemblyPool:
         self._pending_elements = []
 
     # Function that concatenates two random elements from the assembly pool
-    def combine(self, a003313: pd.DataFrame) -> None:
+    def _combine(self, a003313: pd.DataFrame) -> None:
         n = np.sum(self.pool.copy_number)
-        prob = self.pool.copy_number / n
-        index = np.random.choice(np.arange(len(self.pool.element)), size=2, p=prob)
-
+        # Select only non extinct elements
+        non_extinct = self.pool.copy_number > 0
+        prob = self.pool.copy_number[non_extinct] / n
+        index = np.random.choice(
+            np.arange(len(self.pool.element[non_extinct])), size=2, p=prob
+        )
         element0, element1 = self.pool.element[index]
 
-        # Logig to keep the biggest element always first
+        # Logic to keep the biggest element always first
         reorg = False
         if len(element0) >= len(element1):
             new_element = element0 + element1
@@ -62,9 +65,8 @@ class AssemblyPool:
 
         # If the new element is not idx will be an empty array
         if idx.size > 0:
-            cnum = self.pool.at[idx[0], "copy_number"] + 1
             # Increase the copy number of the existing element
-            self.pool.at[idx[0], "copy_number"] = cnum
+            self.pool.at[idx[0], "copy_number"] += 1
             return
         else:
             # Bigger elements are always first
@@ -105,43 +107,48 @@ class AssemblyPool:
         return
 
     def evolve(self, steps: int) -> pd.DataFrame:
-        init_data = {
-            "count": [len(self.pool)],
-            "count_balanced": [np.sum(self.pool.balanced)],
-            "max_size": [np.max(self.pool.size)],
-            "max_lz_comp": [np.max(self.pool.lz_comp)],
-            "assembly_ceiling": [0],
-            "ensenble_entropy": [self.ensemble_entropy()],
-            "innovation": [0],
-            "extinction": [0],
-        }
-        evolution = pd.DataFrame(init_data)
-        a003313 = pd.read_csv("A003313.csv", sep=" ", header=None, engine="python")
-        for _ in tqdm(range(steps), desc="Calculating iterations"):
-            innovation_event = max(evolution.innovation)
-            extinction_event = max(evolution.extinction)
-            count = len(self.pool.element)
-            self.combine(a003313)
-            if len(self.pool.element) > count:
-                innovation_event += 1
-            elif len(self.pool.element) < count:
-                extinction_event += 1
-            evol_measures = {
-                "count": [len(self.pool)],
-                "count_balanced": [np.sum(self.pool.balanced)],
-                "count_dyck_words": [np.sum(self.pool.dyck_word)],
-                "max_size": [np.max(self.pool.size)],
-                "max_lz_comp": [np.max(self.pool.lz_comp)],
-                "assembly_ceiling": [max(self.pool.assembly)],
-                "ensemble_entropy": [self.ensemble_entropy()],
-                "innovation": [innovation_event],
-                "extinction": [extinction_event],
+        init_data = [
+            {
+                "count": len(self.pool),
+                "count_balanced": np.sum(self.pool.balanced),
+                "max_size": np.max(self.pool.size),
+                "max_lz_comp": np.max(self.pool.lz_comp),
+                "assembly_ceiling": 0,
+                "ensenble_entropy": self.ensemble_entropy(),
             }
-            evolution = pd.concat(
-                [evolution, pd.DataFrame(evol_measures)], ignore_index=True
-            )
+        ]
+        a003313 = pd.read_csv("A003313.csv", sep=" ", header=None, engine="python")
+        for step in tqdm(range(steps), desc="Calculating iterations"):
+            non_extinct = self.pool[self.pool.copy_number > 0]
+            self._combine(a003313)
+            evol_metrics = {
+                "count": len(non_extinct),
+                "count_balanced": np.sum(non_extinct.balanced),
+                "count_dyck_words": np.sum(non_extinct.dyck_word),
+                "max_size": np.max(non_extinct.size),
+                "max_lz_comp": np.max(non_extinct.lz_comp),
+                "assembly_ceiling": max(non_extinct.assembly),
+                "ensemble_entropy": self.ensemble_entropy(),
+            }
+            init_data.append(evol_metrics)
+        evolution = pd.DataFrame(init_data)
+        # if step % 500 == 0:
+        #     """
+        #     Selection Rule I
+        #     Remove any string with a hamming_weight (n_1) > sqrt(size)
+        #     """
+        #     weights = self.pool.element.apply(hamming_weight)
+        #     mask = self.pool[weights > np.sqrt(self.pool.size)].index
+        #     self.pool.loc[mask, "copy_number"] = 0
+        #     print(f"There were {len(mask)} species extinct")
+        #
+        #     """
+        #     Selection Rule II
+        #     """
+        #
         return evolution
 
+    # Counts how many times smaller strings 'fit' into a given reference string
     def modularity(self, idx: int) -> np.ndarray:
         string = self.pool.element[idx]
         elements = self.pool.element
@@ -151,13 +158,21 @@ class AssemblyPool:
         return modularity
 
     def ensemble(self) -> None:
-        n = np.sum(self.pool.copy_number)
+        # Select only non-extinct elements
+        non_extinct = self.pool.copy_number > 0
+        n = np.sum(self.pool.copy_number[non_extinct])
         self.pool["ensemble"] = self.pool.copy_number / n
         return
 
     def ensemble_entropy(self) -> float:
         self.ensemble()
-        return -np.sum(self.pool.ensemble * np.log2(self.pool.ensemble))
+        return -np.sum(
+            self.pool.ensemble[self.pool.copy_number > 0]
+            * np.log2(self.pool.ensemble[self.pool.copy_number > 0])
+        )
+
+
+# Functions for string manipulation
 
 
 def check_word(word: str) -> bool:
@@ -186,38 +201,36 @@ def invert_string(string: str) -> str:
     return "".join([str(1 - int(x)) for x in string])
 
 
-def coarse_grain(string: str, window: int) -> str:
-    chunks = [
-        string[x * window : min((x + 1) * window, len(string))]
-        for x in range(len(string) // window + 1)
-    ]
+def hamming_weight(string: str) -> int:
+    return sum([int(x) for x in list(string)])
 
-    averages = [
-        np.round(np.mean(np.array([int(i) for i in list(chunk)]))) for chunk in chunks
-    ]
-    print(averages)
+
+def coarse_grain(string: str, window: int) -> str:
+    n_chunks = len(string) // window
+    chunks = np.zeros(n_chunks)
     coarse_grained_string = ""
-    for i in range(len(averages)):
-        coarse_grained_string += f"{int(averages[i])}"
-    coarse_grained_string = coarse_grained_string[: len(string)]
+    if len(string) % window != 0:
+        n_chunks += 1
+        string += (window - len(string) % window) * "0"
+
+    for i in range(n_chunks):
+        chunks[i] = np.round(
+            np.mean([int(x) for x in string[i * window : (i + 1 * window)]])
+        )
+        coarse_grained_string += str(int(chunks[i]))
+    print(chunks)
     return coarse_grained_string
+
+
+# Functions for graph generation
 
 
 def evol_graph(evolution: pd.DataFrame) -> None:
     x = np.arange(len(evolution))
-    metrics = [
-        "Element number",
-        "Balanced number",
-        "Dyck Word number",
-        "Maximum size",
-        "Maximum L-Z Complexity",
-        "Assembly Ceiling",
-        "Ensemble Entropy",
-        "Hello",
-    ]
+
     i = 0
     for col in evolution.columns:
-        sns.lineplot(data=evolution, x=x, y=col, label=evolution.columns[i])
+        sns.lineplot(data=evolution, x=x, y=col, label=str(col))
         i += 1
     plt.yscale("log")
     plt.xscale("log")
@@ -278,7 +291,7 @@ def main(n0: int, n1: int, steps: int) -> None:
     plt.grid(which="both")
     plt.show()
 
-    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy")
+    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy", hue="balanced")
     plt.xscale("log")
     plt.yscale("log")
     plt.ylabel("Entropy")
@@ -287,11 +300,26 @@ def main(n0: int, n1: int, steps: int) -> None:
     plt.show()
 
     sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
-    # plt.xscale("log")
-    # plt.yscale("log")
     plt.ylabel("Complexity")
     plt.xlabel("Size")
     plt.title("Correlation between size and comp")
+    plt.show()
+
+    sns.pairplot(
+        ap.pool,
+        vars=["copy_number", "size", "entropy", "assembly", "lz_comp", "steps"],
+        hue="dyck_word",
+        diag_kind="kde",
+        plot_kws=dict(marker=".", size=2),
+    )
+    plt.title("Assembly Pool Metrics")
+    plt.show()
+
+    sns.pairplot(
+        evolution,
+        plot_kws=dict(marker=".", size=2),
+    )
+    plt.title("Assembly Pool Metrics")
     plt.show()
 
     return
