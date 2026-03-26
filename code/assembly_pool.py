@@ -111,26 +111,28 @@ class AssemblyPool:
             {
                 "count": len(self.pool),
                 "count_balanced": np.sum(self.pool.balanced),
+                "count_dyck_words": 0,
                 "max_size": np.max(self.pool.size),
                 "max_lz_comp": np.max(self.pool.lz_comp),
                 "assembly_ceiling": 0,
-                "ensenble_entropy": self.ensemble_entropy(),
+                "ensemble_entropy": 0,
             }
         ]
         a003313 = pd.read_csv("A003313.csv", sep=" ", header=None, engine="python")
         for step in tqdm(range(steps), desc="Calculating iterations"):
             non_extinct = self.pool[self.pool.copy_number > 0]
             self._combine(a003313)
-            evol_metrics = {
-                "count": len(non_extinct),
-                "count_balanced": np.sum(non_extinct.balanced),
-                "count_dyck_words": np.sum(non_extinct.dyck_word),
-                "max_size": np.max(non_extinct.size),
-                "max_lz_comp": np.max(non_extinct.lz_comp),
-                "assembly_ceiling": max(non_extinct.assembly),
-                "ensemble_entropy": self.ensemble_entropy(),
-            }
-            init_data.append(evol_metrics)
+            if step % 10 == 0:
+                evol_metrics = {
+                    "count": len(non_extinct),
+                    "count_balanced": np.sum(non_extinct.balanced),
+                    "count_dyck_words": np.sum(non_extinct.dyck_word),
+                    "max_size": np.max(non_extinct.size),
+                    "max_lz_comp": np.max(non_extinct.lz_comp),
+                    "assembly_ceiling": max(non_extinct.assembly),
+                    "ensemble_entropy": self.ensemble_entropy(),
+                }
+                init_data.append(evol_metrics)
         evolution = pd.DataFrame(init_data)
         # if step % 500 == 0:
         #     """
