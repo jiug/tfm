@@ -6,8 +6,8 @@ import assembly_pool as ap
 
 def main():
 
-    n_total = np.array([50, 100, 500, 1000, 1500])
-    copies = 10
+    n_total = np.array([50, 100, 500, 1000, 5000])
+    copies = 1
     steps = 8000
     evol_total = [[0, 0, 0, 0, 0] for _ in range(copies)]
     for c in range(copies):

@@ -25,7 +25,8 @@ class AssemblyPool:
             "dyck_word": [False, False],
             "entropy": [0, 0],
             "assembly": [0, 0],
-            "history": ["1", "0"],
+            "assembly_efficiency": [1, 1],
+            "history": ["(1)", "(0)"],
             "steps": [0, 0],
             "lz_comp": [1, 1],
             "has_inversion": [True, True],
@@ -53,36 +54,41 @@ class AssemblyPool:
         element0, element1 = self.pool.element[index]
 
         # Logic to keep the biggest element always first
-        reorg = False
         if len(element0) >= len(element1):
             new_element = element0 + element1
+            history_big = self.pool.history[index[0]]
+            history_small = self.pool.history[index[1]]
         else:
             new_element = element1 + element0
-            reorg = True
+            history_big = self.pool.history[index[1]]
+            history_small = self.pool.history[index[0]]
 
         # Fin the new element in the assembly pool
         idx = self.pool.loc[self.pool.element == new_element].index
 
         # If the new element is not idx will be an empty array
         if idx.size > 0:
+
             # Increase the copy number of the existing element
-            self.pool.at[idx[0], "copy_number"] += 1
+            if history_big.count(history_small) > 0:
+                self.pool.at[idx[0], "copy_number"] += 1
+            else:
+                self.pool.at[idx[0], "copy_number"] = (
+                    self.pool.loc[index[0], "steps"]
+                    + self.pool.loc[index[1], "steps"]
+                    + 1
+                )
             return
         else:
-            # Bigger elements are always first
-            if reorg:
-                history = [
-                    f"({self.pool.history[index[1]]})({self.pool.history[index[0]]})"
-                ]
-            else:
-                history = [
-                    f"({self.pool.history[index[0]]})({self.pool.history[index[1]]})"
-                ]
+            history = f"({history_big + history_small})"
+
             # Add new element to the assembly pool
             # Same structure as the __init__ dictionary
             length = len(new_element)
             inverted = invert_string(new_element)
             balanced = new_element.count("0") == new_element.count("1")
+            assembly = a003313.iloc[length, 1]
+            steps = np.max(self.pool.steps[index]) + 1
             dyck_word = check_word(new_element)
             new_observation = {
                 "element": new_element,
@@ -91,9 +97,10 @@ class AssemblyPool:
                 "balanced": balanced,
                 "dyck_word": balanced and dyck_word,
                 "entropy": string_entropy(new_element),
-                "assembly": a003313.iloc[length, 1],
+                "assembly": assembly,
+                "assembly_efficiency": steps / assembly,
                 "history": history,
-                "steps": np.max(self.pool.steps[index]) + 1,
+                "steps": steps,
                 "lz_comp": lz.lempel_ziv_complexity(new_element),
                 "has_inversion": (
                     True if sum(self.pool.element.isin([inverted])) > 0 else False
@@ -233,7 +240,7 @@ def evol_graph(evolution: pd.DataFrame) -> None:
     x = np.arange(len(evolution))
 
     i = 0
-    for col in evolution.columns:
+    for col in ["ensemble_entropy", "assembly_ceiling", "max_steps"]:
         sns.lineplot(data=evolution, x=x, y=col, label=str(col))
         i += 1
     plt.yscale("log")
@@ -278,37 +285,37 @@ def main(n0: int, n1: int, steps: int) -> None:
     evol_graph(evolution)
 
     # Graphs
-    sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
-    plt.grid(which="both", linestyle=":")
-    plt.yscale("log")
-    plt.xscale("log")
-    plt.xlabel("Size")
-    plt.ylabel("Copy number")
-    plt.title("Copies of bitstrings by length")
-    plt.legend()
-    plt.show()
-
-    ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
-    sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="steps")
-    plt.yscale("log")
-    plt.xscale("log")
-    plt.grid(which="both")
-    plt.show()
-
-    sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy", hue="balanced")
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.ylabel("Entropy")
-    plt.xlabel("Lempel-Ziv Complexity")
-    plt.title("Complexity vs Entropy")
-    plt.show()
-
-    sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
-    plt.ylabel("Complexity")
-    plt.xlabel("Size")
-    plt.title("Correlation between size and comp")
-    plt.show()
-
+    # sns.scatterplot(data=ap.pool, x="size", y="copy_number", hue="entropy")
+    # plt.grid(which="both", linestyle=":")
+    # plt.yscale("log")
+    # plt.xscale("log")
+    # plt.xlabel("Size")
+    # plt.ylabel("Copy number")
+    # plt.title("Copies of bitstrings by length")
+    # plt.legend()
+    # plt.show()
+    #
+    # ap.pool["log_copy"] = np.log1p(ap.pool["copy_number"])
+    # sns.scatterplot(data=ap.pool, x="size", y="entropy", hue="steps")
+    # plt.yscale("log")
+    # plt.xscale("log")
+    # plt.grid(which="both")
+    # plt.show()
+    #
+    # sns.scatterplot(data=ap.pool, x="lz_comp", y="entropy", hue="balanced")
+    # plt.xscale("log")
+    # plt.yscale("log")
+    # plt.ylabel("Entropy")
+    # plt.xlabel("Lempel-Ziv Complexity")
+    # plt.title("Complexity vs Entropy")
+    # plt.show()
+    #
+    # sns.scatterplot(data=ap.pool, x="size", y="lz_comp")
+    # plt.ylabel("Complexity")
+    # plt.xlabel("Size")
+    # plt.title("Correlation between size and comp")
+    # plt.show()
+    #
     sns.pairplot(
         ap.pool,
         vars=["copy_number", "size", "entropy", "assembly", "lz_comp", "steps"],
