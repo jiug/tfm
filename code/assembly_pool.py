@@ -8,6 +8,12 @@ import pandas as pd
 import seaborn as sns
 from oeis_sequences import OEISsequences as oeis
 from tqdm import tqdm
+import secrets
+
+seed = 149240701493537193154751716433558923303
+# Uncomment for randomly generated seed
+# seed = secrets.randbits(128)
+rng = np.random.default_rng(seed)
 
 
 class AssemblyPool:
@@ -43,12 +49,12 @@ class AssemblyPool:
         self._pending_elements = []
 
     # Function that concatenates two random elements from the assembly pool
-    def _combine(self, a003313: pd.DataFrame) -> None:
+    def _combine(self, a003313: pd.DataFrame, rng=rng) -> None:
         n = np.sum(self.pool.copy_number)
         # Select only non extinct elements
         non_extinct = self.pool.copy_number > 0
         prob = self.pool.copy_number[non_extinct] / n
-        index = np.random.choice(
+        index = rng.choice(
             np.arange(len(self.pool.element[non_extinct])), size=2, p=prob
         )
         element0, element1 = self.pool.element[index]
@@ -87,7 +93,7 @@ class AssemblyPool:
             length = len(new_element)
             inverted = invert_string(new_element)
             balanced = new_element.count("0") == new_element.count("1")
-            assembly = a003313.iloc[length, 1]
+            assembly = a003313.iloc[length - 1, 1]
             steps = np.max(self.pool.steps[index]) + 1
             dyck_word = check_word(new_element)
             new_observation = {
@@ -128,17 +134,17 @@ class AssemblyPool:
         ]
         a003313 = pd.read_csv("A003313.csv", sep=" ", header=None, engine="python")
         for step in tqdm(range(steps), desc="Calculating iterations"):
-            non_extinct = self.pool[self.pool.copy_number > 0]
             self._combine(a003313)
-            if step % 10 == 0:
+            non_extinct = self.pool.copy_number > 0
+            if np.log2(max(1, step)) % 1 == 0:
                 evol_metrics = {
-                    "count": len(non_extinct),
-                    "count_balanced": np.sum(non_extinct.balanced),
-                    "count_dyck_words": np.sum(non_extinct.dyck_word),
-                    "max_size": np.max(non_extinct.size),
-                    "max_steps": np.max(non_extinct.steps),
-                    "max_lz_comp": np.max(non_extinct.lz_comp),
-                    "assembly_ceiling": max(non_extinct.assembly),
+                    "count": len(self.pool[non_extinct]),
+                    "count_balanced": np.sum(self.pool[non_extinct].balanced),
+                    "count_dyck_words": np.sum(self.pool[non_extinct].dyck_word),
+                    "max_size": np.max(self.pool[non_extinct].size),
+                    "max_steps": np.max(self.pool[non_extinct].steps),
+                    "max_lz_comp": np.max(self.pool[non_extinct].lz_comp),
+                    "assembly_ceiling": max(self.pool[non_extinct].assembly),
                     "ensemble_entropy": self.ensemble_entropy(),
                 }
                 init_data.append(evol_metrics)
@@ -237,13 +243,10 @@ def coarse_grain(string: str, window: int) -> str:
 
 
 def evol_graph(evolution: pd.DataFrame) -> None:
-    x = np.arange(len(evolution))
-
-    i = 0
+    x = evolution.index
     for col in ["ensemble_entropy", "assembly_ceiling", "max_steps"]:
         sns.lineplot(data=evolution, x=x, y=col, label=str(col))
-        i += 1
-    plt.yscale("log")
+    # plt.yscale("log")
     plt.xscale("log")
     plt.legend()
     plt.xlabel("Simulation step")
@@ -319,7 +322,7 @@ def main(n0: int, n1: int, steps: int) -> None:
     sns.pairplot(
         ap.pool,
         vars=["copy_number", "size", "entropy", "assembly", "lz_comp", "steps"],
-        hue="dyck_word",
+        hue="has_inversion",
         diag_kind="kde",
         plot_kws=dict(marker=".", size=2),
     )
@@ -330,7 +333,7 @@ def main(n0: int, n1: int, steps: int) -> None:
         evolution,
         plot_kws=dict(marker=".", size=2),
     )
-    plt.title("Assembly Pool Metrics")
+    plt.title("Evolution Metrics")
     plt.show()
 
     return
