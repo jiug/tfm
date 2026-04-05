@@ -244,15 +244,21 @@ def coarse_grain(string: str, window: int) -> str:
 
 def evol_graph(evolution: pd.DataFrame) -> None:
     x = evolution.index
-    for col in ["ensemble_entropy", "assembly_ceiling", "max_steps"]:
+    for col in [
+        "ensemble_entropy",
+        "assembly_ceiling",
+        "max_steps",
+        "max_size",
+        "count_dyck_words",
+        "count",
+    ]:
         sns.lineplot(data=evolution, x=x, y=col, label=str(col))
-    # plt.yscale("log")
-    plt.xscale("log")
-    plt.legend()
+    plt.yscale("log")
     plt.xlabel("Simulation step")
     plt.title("Evolution metrics")
-    plt.grid(which="major")
+    plt.grid(which="both")
     plt.tight_layout()
+    plt.legend()
     plt.show()
 
 
