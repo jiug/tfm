@@ -64,6 +64,9 @@ class GraphCollection:
         self.gsizes = np.ones(N)
         self.gassembly = np.zeros(N)
         self.rng = rng
+        self.history = {
+            "ciclomatic_complexity": [],
+        }
         for i in range(N):
             self.gset[i] = ig.Graph(1)
         return self.gset, self.gsizes, self.gassembly

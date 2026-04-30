@@ -222,21 +222,34 @@ def hamming_weight(string: str) -> int:
     return sum([int(x) for x in list(string)])
 
 
-def coarse_grain(string: str, window: int) -> str:
+def coarse_grain(string: str, window: int) -> tuple[str, str]:
     n_chunks = len(string) // window
     chunks = np.zeros(n_chunks)
     coarse_grained_string = ""
+    resized_coarse_grained = ""
     if len(string) % window != 0:
         n_chunks += 1
         string += (window - len(string) % window) * "0"
 
-    for i in range(n_chunks):
+    for i in range(n_chunks - 1):
         chunks[i] = np.round(
-            np.mean([int(x) for x in string[i * window : (i + 1 * window)]])
+            np.mean([int(x) for x in string[i * window : (i + 1) * window]])
         )
         coarse_grained_string += str(int(chunks[i]))
-    print(chunks)
-    return coarse_grained_string
+        resized_coarse_grained += str(int(chunks[i])) * window
+    return coarse_grained_string, resized_coarse_grained
+
+
+def norm_hamming_distance(string1: str, string2: str) -> float:
+    """Return the normalized Hamming distance between two strings."""
+    len1 = len(string1)
+    if len1 != len(string2):
+        raise ValueError("Strings must be of equal length.")
+    dist_counter = 0
+    for n in range(len(string1)):
+        if string1[n] != string2[n]:
+            dist_counter += 1
+    return dist_counter / len1
 
 
 # Functions for graph generation
